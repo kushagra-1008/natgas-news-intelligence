@@ -415,32 +415,44 @@ async function classifyWithGroq(article) {
 
         temperature: 0,
 
-        /*
-         * GPT-OSS reasoning can consume output
-         * tokens before producing the final answer.
-         *
-         * Disable reasoning because this task only
-         * needs a YES/NO classification.
-         */
+        reasoning_effort: "low",
+
         include_reasoning: false,
 
-        max_completion_tokens: 64,
+        max_completion_tokens: 256,
+
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "natgas_relevance",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                relevant: {
+                  type: "boolean"
+                }
+              },
+              required: ["relevant"],
+              additionalProperties: false
+            }
+          }
+        },
 
         messages: [
           {
             role: "system",
-            content: CLASSIFIER_PROMPT,
+            content: CLASSIFIER_PROMPT
           },
-
           {
             role: "user",
             content:
               `TITLE:\n${article.title}\n\n` +
               `SOURCE:\n${article.source}\n\n` +
-              `ARTICLE:\n${article.body}`,
-          },
-        ],
-      }),
+              `ARTICLE:\n${article.body}`
+          }
+        ]
+      })
     }
   );
 
@@ -448,38 +460,43 @@ async function classifyWithGroq(article) {
     const body = await response.text();
 
     throw new Error(
-      `Groq HTTP ${response.status}: ${body.slice(
-        0,
-        500
-      )}`
+      `Groq HTTP ${response.status}: ${body.slice(0, 500)}`
     );
   }
 
   const data = await response.json();
 
-  const message =
-    data?.choices?.[0]?.message || {};
+  const content =
+    data?.choices?.[0]?.message?.content;
 
-  const answer = cleanText(
-    message.content
-  ).toUpperCase();
-
-  if (/^YES(?:[.!]?)$/.test(answer)) {
-    return true;
-  }
-
-  if (/^NO(?:[.!]?)$/.test(answer)) {
-    return false;
-  }
-
-  throw new Error(
-    `Unexpected classifier output: ${JSON.stringify(
-      answer
-    )} ` +
-      `(finish_reason=${JSON.stringify(
+  if (!content) {
+    throw new Error(
+      `Groq returned empty content. ` +
+      `finish_reason=${JSON.stringify(
         data?.choices?.[0]?.finish_reason
-      )})`
-  );
+      )}`
+    );
+  }
+
+  let parsed;
+
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(
+      `Invalid Groq JSON: ${content}`
+    );
+  }
+
+  if (
+    typeof parsed.relevant !== "boolean"
+  ) {
+    throw new Error(
+      `Invalid classifier response: ${content}`
+    );
+  }
+
+  return parsed.relevant;
 }
 
 async function sendTelegram(article) {
