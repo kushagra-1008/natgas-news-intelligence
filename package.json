@@ -1,0 +1,13 @@
+{
+  "name": "natgas-intel-netlify",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^9.0.0",
+    "cheerio": "^1.1.2"
+  }
+}
