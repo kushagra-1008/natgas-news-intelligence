@@ -5,8 +5,15 @@ const FEED_URL =
   process.env.MARKETSCREENER_URL ||
   "https://in.marketscreener.com/news/commodities/";
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+// ─────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────
+
+const TELEGRAM_TOKEN =
+  process.env.TELEGRAM_BOT_TOKEN;
+
+const TELEGRAM_CHAT_ID =
+  process.env.TELEGRAM_CHAT_ID;
 
 const GROQ_KEYS = [
   process.env.GROQ_KEY_1,
@@ -17,33 +24,57 @@ const GROQ_KEYS = [
 ].filter(Boolean);
 
 const GROQ_MODEL =
-  process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+  process.env.GROQ_MODEL ||
+  "openai/gpt-oss-20b";
 
-const MAX_LISTING_ARTICLES =
-  Number(process.env.MAX_LISTING_ARTICLES || 80);
+// Only inspect the newest 20 articles
+const MAX_LISTING_ARTICLES = 20;
 
+// Maximum number of genuinely new articles
+// processed in one run
 const MAX_NEW_ARTICLES_PER_RUN =
-  Number(process.env.MAX_NEW_ARTICLES_PER_RUN || 25);
+  Number(
+    process.env.MAX_NEW_ARTICLES_PER_RUN || 20
+  );
 
+// Only this much article text is sent to Groq
+const CLASSIFIER_PREVIEW_CHARS =
+  Number(
+    process.env.CLASSIFIER_PREVIEW_CHARS || 600
+  );
+
+// Concurrent article-page requests
 const MAX_CONCURRENT_ARTICLES =
-  Number(process.env.MAX_CONCURRENT_ARTICLES || 5);
+  Number(
+    process.env.MAX_CONCURRENT_ARTICLES || 5
+  );
 
+// Concurrent Groq requests
 const MAX_CONCURRENT_LLM =
-  Number(process.env.MAX_CONCURRENT_LLM || 5);
+  Number(
+    process.env.MAX_CONCURRENT_LLM || 5
+  );
 
-const ARTICLE_MAX_CHARS =
-  Number(process.env.ARTICLE_MAX_CHARS || 12000);
-
+// Number of URLs remembered
 const SEEN_LIMIT =
-  Number(process.env.SEEN_LIMIT || 3000);
+  Number(
+    process.env.SEEN_LIMIT || 3000
+  );
 
 const SEED_ON_FIRST_RUN =
-  (process.env.SEED_ON_FIRST_RUN || "true").toLowerCase() === "true";
+  (
+    process.env.SEED_ON_FIRST_RUN ||
+    "true"
+  ).toLowerCase() === "true";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
   "AppleWebKit/537.36 (KHTML, like Gecko) " +
   "Chrome/151.0 Safari/537.36";
+
+// ─────────────────────────────────────────────
+// SOURCE DETECTION
+// ─────────────────────────────────────────────
 
 const SOURCE_CODES = {
   RE: "Reuters",
@@ -51,6 +82,10 @@ const SOURCE_CODES = {
   AN: "Alliance News",
   MT: "MT Newswires",
 };
+
+// ─────────────────────────────────────────────
+// LLM PROMPT
+// ─────────────────────────────────────────────
 
 const CLASSIFIER_PROMPT = `
 You are a high-precision classifier for a US natural-gas market news alert system.
@@ -114,7 +149,7 @@ IMPORTANT:
 
 The article does NOT need to mention "natural gas", "natgas" or LNG explicitly.
 
-However, indirect relevance must have a clear and plausible transmission mechanism to the US natural-gas market.
+Indirect relevance must have a clear and plausible transmission mechanism to the US natural-gas market.
 
 Do NOT mark YES merely because an article is about:
 - oil
@@ -130,8 +165,6 @@ unless there is a plausible MATERIAL connection to US natural gas.
 
 Prefer precision over recall.
 
-Only return YES when the connection is reasonably strong.
-
 Return exactly one word:
 
 YES
@@ -140,6 +173,10 @@ or
 
 NO
 `;
+
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
 
 function cleanText(value) {
   return String(value || "")
@@ -156,7 +193,10 @@ function escapeHtml(value) {
 }
 
 function absoluteUrl(href) {
-  return new URL(href, FEED_URL).href;
+  return new URL(
+    href,
+    FEED_URL
+  ).href;
 }
 
 function isMarketScreenerUrl(url) {
@@ -173,13 +213,22 @@ function isArticleUrl(url) {
   try {
     const u = new URL(url);
 
-    return /^\/news\/[^?#]+/i.test(u.pathname);
+    return /^\/news\/[^?#]+/i.test(
+      u.pathname
+    );
   } catch {
     return false;
   }
 }
 
-function detectSourceFromNearbyText($, anchor) {
+// ─────────────────────────────────────────────
+// SOURCE DETECTION
+// ─────────────────────────────────────────────
+
+function detectSourceFromNearbyText(
+  $,
+  anchor
+) {
   let node = anchor;
 
   for (
@@ -187,7 +236,9 @@ function detectSourceFromNearbyText($, anchor) {
     depth < 6 && node.length;
     depth++
   ) {
-    const text = cleanText(node.text());
+    const text = cleanText(
+      node.text()
+    );
 
     if (/\bReuters\b/i.test(text)) {
       return "Reuters";
@@ -197,17 +248,24 @@ function detectSourceFromNearbyText($, anchor) {
       return "Dow Jones";
     }
 
-    if (/\bAlliance News\b/i.test(text)) {
+    if (
+      /\bAlliance News\b/i.test(text)
+    ) {
       return "Alliance News";
     }
 
-    if (/\bMT Newswires\b/i.test(text)) {
+    if (
+      /\bMT Newswires\b/i.test(text)
+    ) {
       return "MT Newswires";
     }
 
-    for (const [code, name] of Object.entries(
-      SOURCE_CODES
-    )) {
+    for (
+      const [code, name]
+      of Object.entries(
+        SOURCE_CODES
+      )
+    ) {
       const regex = new RegExp(
         `(?:^|[\\s|])${code}(?:$|[\\s|])`,
         "i"
@@ -233,70 +291,39 @@ function detectSourceFromHtml(html) {
     return "Dow Jones";
   }
 
-  if (/\bAlliance News\b/i.test(html)) {
+  if (
+    /\bAlliance News\b/i.test(html)
+  ) {
     return "Alliance News";
   }
 
-  if (/\bMT Newswires\b/i.test(html)) {
+  if (
+    /\bMT Newswires\b/i.test(html)
+  ) {
     return "MT Newswires";
   }
 
   return "Unknown";
 }
 
-function extractArticleBody(html) {
-  const $ = cheerio.load(html);
-
-  $(
-    "script, style, nav, header, footer, form, noscript, svg"
-  ).remove();
-
-  const candidates = [
-    $("article"),
-    $("main"),
-    $('[class*="article"]'),
-    $('[class*="Article"]'),
-    $('[class*="story"]'),
-  ];
-
-  for (const candidate of candidates) {
-    if (!candidate.length) {
-      continue;
-    }
-
-    const text = cleanText(
-      candidate.first().text()
-    );
-
-    if (text.length >= 300) {
-      return text.slice(
-        0,
-        ARTICLE_MAX_CHARS
-      );
-    }
-  }
-
-  const fallback = cleanText(
-    $("body").text()
-  );
-
-  return fallback.slice(
-    0,
-    ARTICLE_MAX_CHARS
-  );
-}
+// ─────────────────────────────────────────────
+// HTTP
+// ─────────────────────────────────────────────
 
 async function fetchHtml(url) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "Accept-Language":
-        "en-US,en;q=0.9",
-      Accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-    redirect: "follow",
-  });
+  const response = await fetch(
+    url,
+    {
+      headers: {
+        "User-Agent": USER_AGENT,
+        "Accept-Language":
+          "en-US,en;q=0.9",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      redirect: "follow",
+    }
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -307,9 +334,15 @@ async function fetchHtml(url) {
   return response.text();
 }
 
+// ─────────────────────────────────────────────
+// MARKETSCREENER LISTING SCRAPER
+// ─────────────────────────────────────────────
+
 async function scrapeListing() {
   const html =
-    await fetchHtml(FEED_URL);
+    await fetchHtml(
+      FEED_URL
+    );
 
   const $ = cheerio.load(html);
 
@@ -318,6 +351,8 @@ async function scrapeListing() {
 
   $("a[href]").each(
     (_, element) => {
+      // IMPORTANT:
+      // Only collect the newest 20.
       if (
         articles.length >=
         MAX_LISTING_ARTICLES
@@ -335,30 +370,40 @@ async function scrapeListing() {
       let url;
 
       try {
-        url = absoluteUrl(href);
+        url =
+          absoluteUrl(href);
       } catch {
         return;
       }
 
       if (
-        !isMarketScreenerUrl(url)
+        !isMarketScreenerUrl(
+          url
+        )
       ) {
         return;
       }
 
-      if (!isArticleUrl(url)) {
+      if (
+        !isArticleUrl(url)
+      ) {
         return;
       }
 
-      if (seen.has(url)) {
+      if (
+        seen.has(url)
+      ) {
         return;
       }
 
-      const title = cleanText(
-        $(element).text()
-      );
+      const title =
+        cleanText(
+          $(element).text()
+        );
 
-      if (title.length < 8) {
+      if (
+        title.length < 8
+      ) {
         return;
       }
 
@@ -379,6 +424,57 @@ async function scrapeListing() {
   return articles;
 }
 
+// ─────────────────────────────────────────────
+// ARTICLE EXTRACTION
+// ─────────────────────────────────────────────
+
+function extractArticleBody(
+  html
+) {
+  const $ =
+    cheerio.load(html);
+
+  $(
+    "script, style, nav, header, footer, form, noscript, svg"
+  ).remove();
+
+  const candidates = [
+    $("article"),
+    $("main"),
+    $('[class*="article"]'),
+    $('[class*="Article"]'),
+    $('[class*="story"]'),
+  ];
+
+  for (
+    const candidate
+    of candidates
+  ) {
+    if (
+      !candidate.length
+    ) {
+      continue;
+    }
+
+    const text =
+      cleanText(
+        candidate
+          .first()
+          .text()
+      );
+
+    if (
+      text.length >= 300
+    ) {
+      return text;
+    }
+  }
+
+  return cleanText(
+    $("body").text()
+  );
+}
+
 async function enrichArticle(
   article
 ) {
@@ -391,7 +487,9 @@ async function enrichArticle(
     let source =
       article.source;
 
-    if (source === "Unknown") {
+    if (
+      source === "Unknown"
+    ) {
       source =
         detectSourceFromHtml(
           html
@@ -413,10 +511,6 @@ async function enrichArticle(
       `Could not fetch article: ${article.url} — ${error.message}`
     );
 
-    /*
-     * If the listing already identified
-     * Reuters, we can still send it.
-     */
     return {
       ...article,
       body: article.title,
@@ -425,22 +519,30 @@ async function enrichArticle(
   }
 }
 
+// ─────────────────────────────────────────────
+// CONCURRENCY
+// ─────────────────────────────────────────────
+
 async function mapWithConcurrency(
   items,
   limit,
   worker
 ) {
   const results =
-    new Array(items.length);
+    new Array(
+      items.length
+    );
 
   let next = 0;
 
   async function runner() {
     while (true) {
-      const index = next++;
+      const index =
+        next++;
 
       if (
-        index >= items.length
+        index >=
+        items.length
       ) {
         return;
       }
@@ -459,10 +561,11 @@ async function mapWithConcurrency(
     }
   }
 
-  const workers = Math.min(
-    limit,
-    items.length
-  );
+  const workers =
+    Math.min(
+      limit,
+      items.length
+    );
 
   await Promise.all(
     Array.from(
@@ -476,17 +579,16 @@ async function mapWithConcurrency(
   return results;
 }
 
-/*
- * Groq API key rotation.
- *
- * Only configure credentials you are
- * authorized to use.
- */
+// ─────────────────────────────────────────────
+// GROQ KEY ROTATION
+// ─────────────────────────────────────────────
 
 let keyCursor = 0;
 
 function nextGroqKey() {
-  if (!GROQ_KEYS.length) {
+  if (
+    !GROQ_KEYS.length
+  ) {
     throw new Error(
       "No GROQ_KEY_1...GROQ_KEY_5 environment variables configured."
     );
@@ -503,11 +605,25 @@ function nextGroqKey() {
   return key;
 }
 
+// ─────────────────────────────────────────────
+// GROQ CLASSIFICATION
+// ─────────────────────────────────────────────
+
 async function classifyWithGroq(
   article
 ) {
   const apiKey =
     nextGroqKey();
+
+  // Only send the first 600 characters
+  // of the article body.
+  const preview =
+    cleanText(
+      article.body
+    ).slice(
+      0,
+      CLASSIFIER_PREVIEW_CHARS
+    );
 
   const response =
     await fetch(
@@ -574,10 +690,11 @@ async function classifyWithGroq(
 
             {
               role: "user",
+
               content:
                 `TITLE:\n${article.title}\n\n` +
                 `SOURCE:\n${article.source}\n\n` +
-                `ARTICLE:\n${article.body}`,
+                `ARTICLE PREVIEW:\n${preview}`,
             },
           ],
         }),
@@ -606,10 +723,10 @@ async function classifyWithGroq(
   if (!content) {
     throw new Error(
       `Groq returned empty content. ` +
-        `finish_reason=${JSON.stringify(
-          data?.choices?.[0]
-            ?.finish_reason
-        )}`
+      `finish_reason=${JSON.stringify(
+        data?.choices?.[0]
+          ?.finish_reason
+      )}`
     );
   }
 
@@ -636,19 +753,21 @@ async function classifyWithGroq(
   return parsed.relevant;
 }
 
-async function sendTelegram(
-  article,
-  type
-) {
-  let header;
+// ─────────────────────────────────────────────
+// TELEGRAM
+// ─────────────────────────────────────────────
 
-  if (type === "reuters") {
-    header =
-      "🚨 <b>REUTERS</b>";
-  } else {
-    header =
-      "🟢 <b>NATGAS RELEVANT</b>";
-  }
+async function sendTelegram(
+  article
+) {
+  const isReuters =
+    article.source ===
+    "Reuters";
+
+  const header =
+    isReuters
+      ? "🚨 <b>REUTERS — NATGAS RELEVANT</b>"
+      : "🟢 <b>NATGAS RELEVANT</b>";
 
   const text = [
     header,
@@ -701,6 +820,10 @@ async function sendTelegram(
   }
 }
 
+// ─────────────────────────────────────────────
+// NETLIFY BLOBS
+// ─────────────────────────────────────────────
+
 async function getSeen(
   store
 ) {
@@ -712,7 +835,9 @@ async function getSeen(
       }
     );
 
-  return Array.isArray(value)
+  return Array.isArray(
+    value
+  )
     ? value
     : [];
 }
@@ -723,9 +848,15 @@ async function saveSeen(
 ) {
   await store.setJSON(
     "seen-urls",
-    urls.slice(-SEEN_LIMIT)
+    urls.slice(
+      -SEEN_LIMIT
+    )
   );
 }
+
+// ─────────────────────────────────────────────
+// MAIN
+// ─────────────────────────────────────────────
 
 async function run() {
   if (
@@ -737,7 +868,9 @@ async function run() {
     );
   }
 
-  if (!GROQ_KEYS.length) {
+  if (
+    !GROQ_KEYS.length
+  ) {
     throw new Error(
       "Missing GROQ_KEY_1...GROQ_KEY_5."
     );
@@ -749,7 +882,9 @@ async function run() {
     );
 
   const seen =
-    await getSeen(store);
+    await getSeen(
+      store
+    );
 
   const seenSet =
     new Set(seen);
@@ -758,18 +893,18 @@ async function run() {
     `Scraping: ${FEED_URL}`
   );
 
+  // Only latest 20
   const listing =
     await scrapeListing();
 
   console.log(
-    `Listing contains ${listing.length} article links.`
+    `Latest articles found: ${listing.length}`
   );
 
-  /*
-   * First deployment:
-   * save the currently visible
-   * articles without sending them.
-   */
+  // ───────────────────────────────────────────
+  // FIRST RUN
+  // ───────────────────────────────────────────
+
   if (
     seen.length === 0 &&
     SEED_ON_FIRST_RUN
@@ -777,7 +912,7 @@ async function run() {
     await saveSeen(
       store,
       listing.map(
-        (article) =>
+        article =>
           article.url
       )
     );
@@ -789,10 +924,14 @@ async function run() {
     return;
   }
 
+  // ───────────────────────────────────────────
+  // FIND NEW ARTICLES
+  // ───────────────────────────────────────────
+
   const newArticles =
     listing
       .filter(
-        (article) =>
+        article =>
           !seenSet.has(
             article.url
           )
@@ -802,7 +941,9 @@ async function run() {
         MAX_NEW_ARTICLES_PER_RUN
       );
 
-  if (!newArticles.length) {
+  if (
+    !newArticles.length
+  ) {
     console.log(
       "No new articles."
     );
@@ -814,10 +955,10 @@ async function run() {
     `${newArticles.length} new article(s) detected.`
   );
 
-  /*
-   * Fetch article pages so we can
-   * reliably identify the source.
-   */
+  // ───────────────────────────────────────────
+  // FETCH ARTICLE PAGES
+  // ───────────────────────────────────────────
+
   const enriched =
     await mapWithConcurrency(
       newArticles,
@@ -827,82 +968,25 @@ async function run() {
 
   const validArticles =
     enriched.filter(
-      (article) =>
+      article =>
         article &&
         !article.error
     );
 
-  /*
-   * IMPORTANT:
-   *
-   * Reuters:
-   *   send immediately.
-   *
-   * Non-Reuters:
-   *   send to Groq.
-   */
-  const reutersArticles =
-    validArticles.filter(
-      (article) =>
-        article.source ===
-        "Reuters"
-    );
-
-  const otherArticles =
-    validArticles.filter(
-      (article) =>
-        article.source !==
-        "Reuters"
-    );
-
   console.log(
-    `Reuters: ${reutersArticles.length}`
+    `Article pages fetched: ${validArticles.length}`
   );
 
-  console.log(
-    `Other sources for LLM: ${otherArticles.length}`
-  );
+  // ───────────────────────────────────────────
+  // EVERY SOURCE GOES THROUGH GROQ
+  // ───────────────────────────────────────────
 
-  /*
-   * Reuters does NOT go through
-   * the LLM.
-   */
-  const telegramSent = [];
-
-  for (
-    const article of [
-      ...reutersArticles,
-    ].reverse()
-  ) {
-    try {
-      await sendTelegram(
-        article,
-        "reuters"
-      );
-
-      telegramSent.push(
-        article.url
-      );
-
-      console.log(
-        `🚨 Reuters sent: ${article.title}`
-      );
-    } catch (error) {
-      console.error(
-        `Reuters Telegram failed for ${article.url}: ${error.message}`
-      );
-    }
-  }
-
-  /*
-   * Only non-Reuters articles
-   * are classified by Groq.
-   */
   const classified =
     await mapWithConcurrency(
-      otherArticles,
+      validArticles,
       MAX_CONCURRENT_LLM,
-      async (article) => {
+
+      async article => {
         const relevant =
           await classifyWithGroq(
             article
@@ -917,14 +1001,14 @@ async function run() {
 
   const successful =
     classified.filter(
-      (result) =>
+      result =>
         result &&
         !result.error
     );
 
   const relevant =
     successful.filter(
-      (article) =>
+      article =>
         article.relevant
     );
 
@@ -936,10 +1020,14 @@ async function run() {
     `NATGAS relevant: ${relevant.length}`
   );
 
-  /*
-   * Send relevant non-Reuters
-   * articles to Telegram.
-   */
+  // ───────────────────────────────────────────
+  // TELEGRAM
+  // ───────────────────────────────────────────
+
+  const telegramSent =
+    [];
+
+  // Oldest first
   for (
     const article of [
       ...relevant,
@@ -947,17 +1035,25 @@ async function run() {
   ) {
     try {
       await sendTelegram(
-        article,
-        "natgas"
+        article
       );
 
       telegramSent.push(
         article.url
       );
 
-      console.log(
-        `🟢 NATGAS sent: ${article.title}`
-      );
+      if (
+        article.source ===
+        "Reuters"
+      ) {
+        console.log(
+          `🚨 Reuters NATGAS sent: ${article.title}`
+        );
+      } else {
+        console.log(
+          `🟢 NATGAS sent: ${article.title}`
+        );
+      }
     } catch (error) {
       console.error(
         `Telegram failed for ${article.url}: ${error.message}`
@@ -965,16 +1061,10 @@ async function run() {
     }
   }
 
-  /*
-   * Mark successfully processed
-   * articles as seen.
-   *
-   * Reuters is considered processed
-   * after successful Telegram delivery.
-   *
-   * Non-Reuters is considered processed
-   * after successful LLM classification.
-   */
+  // ───────────────────────────────────────────
+  // SAVE PROCESSED ARTICLES
+  // ───────────────────────────────────────────
+
   for (
     const article of successful
   ) {
@@ -995,11 +1085,15 @@ async function run() {
   );
 
   console.log(
-    `Complete: ${successful.length} non-Reuters classified, ` +
-      `${reutersArticles.length} Reuters detected, ` +
-      `${telegramSent.length} Telegram messages sent.`
+    `Complete: ${successful.length} classified, ` +
+      `${relevant.length} relevant, ` +
+      `${telegramSent.length} Telegram alerts sent.`
   );
 }
+
+// ─────────────────────────────────────────────
+// NETLIFY SCHEDULE
+// ─────────────────────────────────────────────
 
 export default async () => {
   await run();
@@ -1008,4 +1102,4 @@ export default async () => {
 export const config = {
   schedule:
     "*/4 * * * *",
-}; 
+};
