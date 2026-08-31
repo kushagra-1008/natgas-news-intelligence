@@ -351,8 +351,7 @@ async function scrapeListing() {
 
   $("a[href]").each(
     (_, element) => {
-      // IMPORTANT:
-      // Only collect the newest 20.
+
       if (
         articles.length >=
         MAX_LISTING_ARTICLES
@@ -419,6 +418,26 @@ async function scrapeListing() {
           ),
       });
     }
+  );
+
+  console.log(
+    "===== ARTICLES SCRAPED ====="
+  );
+
+  articles.forEach(
+    (article, index) => {
+      console.log(
+        `${index + 1}. [${article.source}] ${article.title}`
+      );
+
+      console.log(
+        `   ${article.url}`
+      );
+    }
+  );
+
+  console.log(
+    "============================"
   );
 
   return articles;
