@@ -1,10 +1,7 @@
 import { getStore } from "@netlify/blobs";
 import * as cheerio from "cheerio";
 
-const FEED_URL =
-  process.env.MARKETSCREENER_URL ||
-  "https://in.marketscreener.com/news/commodities/";
-
+const FEED_URL = process.env.MARKETSCREENER_URL || "https://in.marketscreener.com/news/commodities/";
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
@@ -17,17 +14,13 @@ const GROQ_KEYS = [
 ].filter(Boolean);
 
 const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
-
-// Read a wider window from the live feed so newly published stories
-// are much less likely to fall out between 4-minute polls.
 const MAX_LISTING_ARTICLES = 80;
 const MAX_NEW_ARTICLES_PER_RUN = Number(process.env.MAX_NEW_ARTICLES_PER_RUN || 30);
 const CLASSIFIER_PREVIEW_CHARS = Number(process.env.CLASSIFIER_PREVIEW_CHARS || 600);
 const MAX_CONCURRENT_ARTICLES = Number(process.env.MAX_CONCURRENT_ARTICLES || 5);
 const MAX_CONCURRENT_LLM = Number(process.env.MAX_CONCURRENT_LLM || 5);
 const SEEN_LIMIT = Number(process.env.SEEN_LIMIT || 3000);
-const SEED_ON_FIRST_RUN =
-  (process.env.SEED_ON_FIRST_RUN || "true").toLowerCase() === "true";
+const SEED_ON_FIRST_RUN = (process.env.SEED_ON_FIRST_RUN || "true").toLowerCase() === "true";
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -42,27 +35,23 @@ const SOURCE_CODES = {
 };
 
 const CLASSIFIER_PROMPT = `
-You are a high-precision classifier for a US natural-gas market news alert system.
+You are a high-precision classifier for a US natural-gas market alert system.
 
-TASK:
 Determine whether this article contains information that could plausibly have a MATERIAL impact on US natural-gas supply, demand, storage, flows, LNG, power burn, or pricing.
 
-Return ONLY:
-YES
-or
-NO
+Return ONLY YES or NO.
 
-Mark YES when the article concerns a material development involving:
-- US natural-gas production, forecasts, drilling, rigs, curtailments, shut-ins, producer guidance or major gas basins such as Permian, Haynesville, Marcellus and Utica
+YES includes material developments involving:
+- US natural-gas production, forecasts, drilling, rigs, curtailments, shut-ins, producer guidance and major gas basins
 - associated gas from US oil production
-- US gas pipelines, processing plants, compressors, constraints, outages or expansions
-- US LNG exports, feedgas, terminals, outages, maintenance, commissioning, ramp-ups or expansions
-- global LNG supply disruptions, major capacity changes, LNG shipping or major shipping-route/chokepoint disruptions
+- US gas pipelines, processing plants, compressors, constraints, outages and expansions
+- US LNG exports, feedgas, terminals, outages, maintenance, commissioning, ramp-ups and expansions
+- global LNG supply disruptions, major capacity changes, LNG shipping and major shipping-route/chokepoint disruptions
 - Qatar or other major LNG suppliers when the event could materially affect global LNG flows or US LNG economics
-- weather events or forecasts that materially affect US heating/cooling demand, power burn or gas supply
-- gas-fired generation, major electricity-demand changes, coal-to-gas switching, or large nuclear/coal outages
+- weather materially affecting US gas demand/supply, power burn or gas-fired generation
+- major electricity-demand changes, coal-to-gas switching, or large nuclear/coal outages
 - EIA storage reports, forecasts, revisions, injections or withdrawals
-- Canada-US or Mexico-US gas flows and major changes in US gas imports/exports
+- Canada-US or Mexico-US gas flows and material US gas import/export changes
 - Iran-US war, negotiations, sanctions or peace-deal developments when they could affect energy markets
 - Strait of Hormuz disruptions, closures, reopening, military activity or shipping risks
 - Middle East conflicts that could materially disrupt LNG, oil or global energy flows
@@ -72,13 +61,9 @@ Mark YES when the article concerns a material development involving:
 - OPEC+ or major oil-price developments ONLY when they could materially change US associated-gas production or US gas-market conditions
 
 The article does NOT need to mention natural gas, natgas or LNG explicitly.
-
 Indirect relevance must have a clear and plausible transmission mechanism to the US natural-gas market.
-
-Do NOT mark YES merely because an article is about oil, geopolitics, Iran, Russia, the Middle East, Europe, commodities or electricity. There must be a plausible MATERIAL connection to US natural gas.
-
+Do NOT mark YES merely because an article is about oil, geopolitics, Iran, Russia, the Middle East, Europe, commodities or electricity unless there is a plausible MATERIAL connection to US natural gas.
 Prefer precision over recall.
-
 Return exactly one word: YES or NO.
 `;
 
@@ -108,7 +93,12 @@ function isMarketScreenerUrl(url) {
 
 function isArticleUrl(url) {
   try {
-    return /^\/news\/[^?#]+/i.test(new URL(url).pathname);
+    const pathname = new URL(url).pathname;
+
+    // MarketScreener article pages use a /news/<slug>-ce<hex-id>
+    // structure. Category/navigation pages such as /news/indexes/
+    // and /news/topics/economy/ must never enter the article queue.
+    return /^\/news\/[^/]+-ce[0-9a-f]+\/?$/i.test(pathname);
   } catch {
     return false;
   }
@@ -145,12 +135,10 @@ function detectSourceFromHtml(html) {
 }
 
 async function fetchHtml(url) {
-  // Cache-bust the feed request so Netlify/CDN caching is less likely
-  // to hand the scheduled function an old commodities page.
-  const target =
-    url === FEED_URL
-      ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}`
-      : url;
+  const isFeed = url === FEED_URL;
+  const target = isFeed
+    ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}`
+    : url;
 
   const response = await fetch(target, {
     headers: {
@@ -203,9 +191,9 @@ async function scrapeListing() {
     });
   });
 
-  console.log(`Latest article links extracted: ${articles.length}`);
+  console.log(`Article URLs extracted: ${articles.length}`);
   console.log("===== ARTICLE SAMPLE =====");
-  articles.slice(0, 10).forEach((article, index) => {
+  articles.slice(0, 20).forEach((article, index) => {
     console.log(`${index + 1}. [${article.source}] ${article.title}`);
     console.log(`   ${article.url}`);
   });
@@ -244,18 +232,10 @@ async function enrichArticle(article) {
       source = detectSourceFromHtml(html);
     }
 
-    return {
-      ...article,
-      source,
-      body: extractArticleBody(html),
-    };
+    return { ...article, source, body: extractArticleBody(html) };
   } catch (error) {
     console.warn(`Article fetch failed: ${article.url} — ${error.message}`);
-    return {
-      ...article,
-      body: article.title,
-      fetchFailed: true,
-    };
+    return { ...article, body: article.title, fetchFailed: true };
   }
 }
 
@@ -267,7 +247,6 @@ async function mapWithConcurrency(items, limit, worker) {
     while (true) {
       const index = next++;
       if (index >= items.length) return;
-
       try {
         results[index] = await worker(items[index], index);
       } catch (error) {
@@ -287,7 +266,6 @@ function nextGroqKey() {
   if (!GROQ_KEYS.length) {
     throw new Error("No GROQ_KEY_1...GROQ_KEY_5 environment variables configured.");
   }
-
   const key = GROQ_KEYS[keyCursor % GROQ_KEYS.length];
   keyCursor++;
   return key;
@@ -316,9 +294,7 @@ async function classifyWithGroq(article) {
           strict: true,
           schema: {
             type: "object",
-            properties: {
-              relevant: { type: "boolean" },
-            },
+            properties: { relevant: { type: "boolean" } },
             required: ["relevant"],
             additionalProperties: false,
           },
@@ -346,11 +322,7 @@ async function classifyWithGroq(article) {
   const content = data?.choices?.[0]?.message?.content;
 
   if (!content) {
-    throw new Error(
-      `Groq returned empty content. finish_reason=${JSON.stringify(
-        data?.choices?.[0]?.finish_reason
-      )}`
-    );
+    throw new Error(`Groq returned empty content. finish_reason=${JSON.stringify(data?.choices?.[0]?.finish_reason)}`);
   }
 
   let parsed;
@@ -368,10 +340,9 @@ async function classifyWithGroq(article) {
 }
 
 async function sendTelegram(article) {
-  const header =
-    article.source === "Reuters"
-      ? "🚨 <b>REUTERS — NATGAS RELEVANT</b>"
-      : "🟢 <b>NATGAS RELEVANT</b>";
+  const header = article.source === "Reuters"
+    ? "🚨 <b>REUTERS — NATGAS RELEVANT</b>"
+    : "🟢 <b>NATGAS RELEVANT</b>";
 
   const text = [
     header,
@@ -382,19 +353,16 @@ async function sendTelegram(article) {
     `<a href="${escapeHtml(article.url)}">Open article on MarketScreener</a>`,
   ].join("\n");
 
-  const response = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: false,
-      }),
-    }
-  );
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text,
+      parse_mode: "HTML",
+      disable_web_page_preview: false,
+    }),
+  });
 
   if (!response.ok) {
     const body = await response.text();
@@ -415,7 +383,6 @@ async function run() {
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) {
     throw new Error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.");
   }
-
   if (!GROQ_KEYS.length) {
     throw new Error("Missing GROQ_KEY_1...GROQ_KEY_5.");
   }
@@ -425,7 +392,6 @@ async function run() {
   const seenSet = new Set(seen);
 
   console.log(`Scraping: ${FEED_URL}`);
-
   const listing = await scrapeListing();
 
   if (seen.length === 0 && SEED_ON_FIRST_RUN) {
@@ -445,35 +411,18 @@ async function run() {
 
   console.log(`${newArticles.length} new article(s) detected.`);
 
-  const enriched = await mapWithConcurrency(
-    newArticles,
-    MAX_CONCURRENT_ARTICLES,
-    enrichArticle
-  );
-
-  const validArticles = enriched.filter(
-    (article) => article && !article.error
-  );
-
+  const enriched = await mapWithConcurrency(newArticles, MAX_CONCURRENT_ARTICLES, enrichArticle);
+  const validArticles = enriched.filter((article) => article && !article.error);
   console.log(`Article pages fetched: ${validArticles.length}`);
 
-  // Every new article is sent to the relevance classifier.
   const classified = await mapWithConcurrency(
     validArticles,
     MAX_CONCURRENT_LLM,
-    async (article) => ({
-      ...article,
-      relevant: await classifyWithGroq(article),
-    })
+    async (article) => ({ ...article, relevant: await classifyWithGroq(article) })
   );
 
-  const successful = classified.filter(
-    (result) => result && !result.error
-  );
-
-  const relevant = successful.filter(
-    (article) => article.relevant
-  );
+  const successful = classified.filter((result) => result && !result.error);
+  const relevant = successful.filter((article) => article.relevant);
 
   console.log(`LLM classified: ${successful.length}`);
   console.log(`NATGAS relevant: ${relevant.length}`);
@@ -484,23 +433,15 @@ async function run() {
     try {
       await sendTelegram(article);
       sentUrls.push(article.url);
-
-      console.log(
-        `${article.source === "Reuters" ? "🚨" : "🟢"} Sent: ${article.title}`
-      );
+      console.log(`${article.source === "Reuters" ? "🚨" : "🟢"} Sent: ${article.title}`);
     } catch (error) {
-      console.error(
-        `Telegram failed for ${article.url}: ${error.message}`
-      );
+      console.error(`Telegram failed for ${article.url}: ${error.message}`);
     }
   }
 
-  // Mark all successfully classified articles as seen, regardless of YES/NO.
-  // Failed classifications remain eligible for retry on the next run.
   for (const article of successful) {
     seenSet.add(article.url);
   }
-
   for (const url of sentUrls) {
     seenSet.add(url);
   }
@@ -508,9 +449,7 @@ async function run() {
   await saveSeen(store, [...seenSet]);
 
   console.log(
-    `Complete: ${successful.length} classified, ` +
-      `${relevant.length} relevant, ` +
-      `${sentUrls.length} Telegram alerts sent.`
+    `Complete: ${successful.length} classified, ${relevant.length} relevant, ${sentUrls.length} Telegram alerts sent.`
   );
 }
 
