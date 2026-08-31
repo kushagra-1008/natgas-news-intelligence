@@ -35,35 +35,77 @@ const SOURCE_CODES = {
 };
 
 const CLASSIFIER_PROMPT = `
-You are a high-precision classifier for a US natural-gas market alert system.
+You are the relevance classifier for a US natural-gas and energy-market alert system.
 
-Determine whether this article contains information that could plausibly have a MATERIAL impact on US natural-gas supply, demand, storage, flows, LNG, power burn, or pricing.
+TASK:
+Read the article TITLE, SOURCE and short ARTICLE PREVIEW. Decide whether the article is worth sending as a Telegram alert because it could materially matter to US natural gas, LNG, energy markets, or the macro/geopolitical environment that can move those markets.
 
-Return ONLY YES or NO.
+Return ONLY:
+YES
+or
+NO
 
-YES includes material developments involving:
-- US natural-gas production, forecasts, drilling, rigs, curtailments, shut-ins, producer guidance and major gas basins
-- associated gas from US oil production
-- US gas pipelines, processing plants, compressors, constraints, outages and expansions
-- US LNG exports, feedgas, terminals, outages, maintenance, commissioning, ramp-ups and expansions
-- global LNG supply disruptions, major capacity changes, LNG shipping and major shipping-route/chokepoint disruptions
-- Qatar or other major LNG suppliers when the event could materially affect global LNG flows or US LNG economics
-- weather materially affecting US gas demand/supply, power burn or gas-fired generation
-- major electricity-demand changes, coal-to-gas switching, or large nuclear/coal outages
-- EIA storage reports, forecasts, revisions, injections or withdrawals
-- Canada-US or Mexico-US gas flows and material US gas import/export changes
-- Iran-US war, negotiations, sanctions or peace-deal developments when they could affect energy markets
-- Strait of Hormuz disruptions, closures, reopening, military activity or shipping risks
-- Middle East conflicts that could materially disrupt LNG, oil or global energy flows
+IMPORTANT:
+- Evaluate EVERY article the same way. Do not give Reuters, Dow Jones, MT Newswires, Alliance News, or any other source special treatment.
+- Use the title and preview together.
+- The preview is intentionally short; do not require the full article.
+- Favor useful alerts over extreme filtering. If an article clearly belongs to one of the high-value categories below, return YES even when the US natural-gas impact is indirect.
+- Do NOT require the words "natural gas" or "natgas" to appear.
+
+RETURN YES for clear or strongly relevant developments involving:
+
+US NATURAL GAS / LNG:
+- US natural-gas prices, Henry Hub, regional gas prices
+- US gas production, associated gas, drilling, rigs, producer guidance, curtailments, shut-ins or major gas basins
+- Permian, Haynesville, Marcellus, Utica and other major US gas-producing regions
+- US gas pipelines, processing plants, compressors, constraints, outages, maintenance or expansions
+- EIA natural-gas storage, storage expectations, injections, withdrawals or major revisions
+- US LNG exports, feedgas, LNG terminals, outages, maintenance, commissioning, ramp-ups or expansions
+- Freeport LNG, Sabine Pass, Corpus Christi, Cameron, Calcasieu Pass, Plaquemines and other major US LNG facilities
+- LNG vessel flows or disruptions that can materially affect US LNG exports
+- Canada-US or Mexico-US gas flows and major US gas import/export changes
+- major changes in US gas demand, power burn, industrial demand or residential/commercial demand
+
+WEATHER / POWER:
+- Major US heat waves, cold waves, hurricanes, tropical systems, freeze-offs or weather forecast changes that can materially affect gas demand or supply
+- US electricity demand, gas-fired generation, coal-to-gas switching
+- Large nuclear, coal or power-plant outages that can materially change gas power burn
+
+GLOBAL LNG / ENERGY FLOWS:
+- Major LNG supply outages, startups, shutdowns, maintenance or capacity changes anywhere in the world
+- Qatar LNG production/export disruptions or threats
+- Middle East energy infrastructure disruptions
+- Strait of Hormuz closures, reopening, attacks, threats, military escalation or major shipping disruption
+- Red Sea, Suez Canal, Panama Canal or other major energy/LNG shipping-route disruptions
+- Global LNG shipping disruptions that can materially alter LNG availability or pricing
+- European natural gas, TTF or major European storage developments when they can affect global LNG demand/pricing or US LNG economics
 - Russia-Ukraine developments affecting natural gas, LNG, pipelines or European energy supply
-- European gas/TTF developments that could materially affect US LNG demand or global LNG pricing
-- major sanctions, tariffs, regulations or government policies affecting natural gas, LNG or energy trade
-- OPEC+ or major oil-price developments ONLY when they could materially change US associated-gas production or US gas-market conditions
 
-The article does NOT need to mention natural gas, natgas or LNG explicitly.
-Indirect relevance must have a clear and plausible transmission mechanism to the US natural-gas market.
-Do NOT mark YES merely because an article is about oil, geopolitics, Iran, Russia, the Middle East, Europe, commodities or electricity unless there is a plausible MATERIAL connection to US natural gas.
-Prefer precision over recall.
+MIDDLE EAST / IRAN / GEOPOLITICS:
+- Iran-US war, military escalation, negotiations, ceasefire, peace deals, sanctions or major diplomatic developments
+- Israel/Iran or other Middle East conflict developments involving destruction, attacks, blockades, energy infrastructure, shipping or major escalation
+- Any major Middle East destruction or disruption that can affect oil, LNG, shipping, global energy prices or energy security
+- Major sanctions, embargoes, tariffs or government policies affecting energy trade
+
+US MACROECONOMY / FINANCIAL CONDITIONS:
+- Federal Reserve decisions, rate changes, major Fed guidance or major changes in rate expectations
+- US CPI, PCE, PPI, jobs/payrolls, unemployment, GDP, ISM/PMI or other major US macroeconomic releases
+- US Treasury yields, major yield moves or changes in the US rate curve when market-moving
+- US Dollar Index (DXY), major dollar moves or major USD developments when market-moving
+- US recession/growth/inflation developments with meaningful implications for commodity or energy demand
+- major US fiscal, tariff, trade or economic-policy changes that can materially move the dollar, rates, growth or energy markets
+- major risk-on/risk-off or financial-market shocks when they can materially affect commodities, energy demand or LNG economics
+
+OIL / OPEC:
+- Major oil-price shocks, OPEC/OPEC+ decisions or major oil-market disruptions ONLY when they have a plausible material connection to US natural gas, associated gas, LNG economics or broader energy pricing
+
+IMPORTANT BORDERLINE RULE:
+If an article is strongly about one of these high-value themes, especially US macroeconomics, DXY, Fed/rates, Iran-US conflict/peace, major Middle East destruction, Hormuz, Qatar LNG, global LNG disruption, US weather, US power demand or US energy infrastructure, choose YES even if the article does not explicitly mention natural gas.
+
+Do NOT return YES for ordinary unrelated company earnings, consumer news, local politics, generic stock moves, agriculture, rubber, retail, technology or other stories with no meaningful energy/macro/geopolitical connection.
+
+The goal is a useful market-alert feed, NOT a tiny feed containing only articles that explicitly say "natural gas".
+
 Return exactly one word: YES or NO.
 `;
 
@@ -94,10 +136,6 @@ function isMarketScreenerUrl(url) {
 function isArticleUrl(url) {
   try {
     const pathname = new URL(url).pathname;
-
-    // MarketScreener article pages use a /news/<slug>-ce<hex-id>
-    // structure. Category/navigation pages such as /news/indexes/
-    // and /news/topics/economy/ must never enter the article queue.
     return /^\/news\/[^/]+-ce[0-9a-f]+\/?$/i.test(pathname);
   } catch {
     return false;
@@ -340,12 +378,8 @@ async function classifyWithGroq(article) {
 }
 
 async function sendTelegram(article) {
-  const header = article.source === "Reuters"
-    ? "🚨 <b>REUTERS — NATGAS RELEVANT</b>"
-    : "🟢 <b>NATGAS RELEVANT</b>";
-
   const text = [
-    header,
+    "🚨 <b>NATGAS / ENERGY MARKET ALERT</b>",
     "",
     `<b>${escapeHtml(article.title)}</b>`,
     "",
@@ -433,7 +467,7 @@ async function run() {
     try {
       await sendTelegram(article);
       sentUrls.push(article.url);
-      console.log(`${article.source === "Reuters" ? "🚨" : "🟢"} Sent: ${article.title}`);
+      console.log(`🚨 Sent: ${article.title}`);
     } catch (error) {
       console.error(`Telegram failed for ${article.url}: ${error.message}`);
     }
@@ -442,6 +476,7 @@ async function run() {
   for (const article of successful) {
     seenSet.add(article.url);
   }
+
   for (const url of sentUrls) {
     seenSet.add(url);
   }
