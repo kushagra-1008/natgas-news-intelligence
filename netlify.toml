@@ -1,2 +1,5 @@
 [build]
   functions = "netlify/functions"
+
+[functions."natgas-news"]
+  schedule = "*/4 * * * *"
